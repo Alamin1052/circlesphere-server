@@ -30,7 +30,20 @@ async function run() {
         const db = client.db('circlesphere_db');
         const userCollection = db.collection('users');
 
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            user.role = 'member';
+            user.createdAt = new Date();
+            const email = user.email;
+            const userExists = await userCollection.findOne({ email })
 
+            if (userExists) {
+                return res.send({ message: 'user exists' })
+            }
+
+            const result = await userCollection.insertOne(user);
+            res.send(result);
+        })
 
 
 
@@ -45,7 +58,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get('/', (req, res) => {
-    res.send('zap is shifting!')
+    res.send('CircleSphere is Running')
 })
 
 app.listen(port, () => {
