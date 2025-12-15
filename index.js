@@ -72,12 +72,12 @@ async function run() {
             next();
         }
 
-        const verifyMember = async (req, res, next) => {
+        const verifymanager = async (req, res, next) => {
             const email = req.decoded_email;
             const query = { email };
             const user = await userCollection.findOne(query);
 
-            if (!user || user.role !== 'member') {
+            if (!user || user.role !== 'manager') {
                 return res.status(403).send({ message: 'forbidden access' });
             }
 
@@ -118,8 +118,14 @@ async function run() {
             const result = await userCollection.insertOne(user);
             res.send(result);
         })
+        app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email;
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ role: user?.role || 'user' })
+        })
 
-        app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+        app.patch('/users/:id/role', verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const roleInfo = req.body;
             const query = { _id: new ObjectId(id) }
