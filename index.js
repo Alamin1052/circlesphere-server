@@ -2,7 +2,7 @@ const express = require('express')
 const cors = require('cors');
 const app = express();
 require('dotenv').config();
-const { MongoClient, ServerApiVersion, } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId, } = require('mongodb');
 const port = process.env.PORT || 3000
 
 // middleware
@@ -116,6 +116,19 @@ async function run() {
             }
 
             const result = await userCollection.insertOne(user);
+            res.send(result);
+        })
+
+        app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const roleInfo = req.body;
+            const query = { _id: new ObjectId(id) }
+            const updatedDoc = {
+                $set: {
+                    role: roleInfo.role
+                }
+            }
+            const result = await userCollection.updateOne(query, updatedDoc)
             res.send(result);
         })
 
