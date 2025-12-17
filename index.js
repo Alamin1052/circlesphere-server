@@ -60,6 +60,7 @@ async function run() {
         const db = client.db('circlesphere_db');
         const userCollection = db.collection('users');
         const clubCollection = db.collection('clubs')
+        const eventCollection = db.collection('events')
 
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded_email;
@@ -150,7 +151,7 @@ async function run() {
                 club.status = 'pending';
                 club.createdAt = new Date();
                 club.updatedAt = new Date();
-                club.managerEmail = req.decoded_email; // manager email token থেকে
+                club.managerEmail = req.decoded_email;
 
                 const result = await clubCollection.insertOne(club);
                 res.send(result);
@@ -159,6 +160,32 @@ async function run() {
                 res.status(500).send({ message: 'Failed to create club', error: err.message });
             }
         });
+
+        // GET /clubs?search=abc
+        app.get('/clubs', async (req, res) => {
+            try {
+                const { search } = req.query;
+
+                let query = { status: 'pending' };
+
+                if (search) {
+                    query = {
+                        ...query,
+                        $or: [
+                            { clubName: { $regex: search, $options: 'i' } },
+                            { description: { $regex: search, $options: 'i' } },
+                        ]
+                    };
+                }
+
+                const clubs = await clubCollection.find(query).toArray();
+                res.send(clubs);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to fetch clubs', error: err.message });
+            }
+        });
+
 
         // GET all clubs (optionally filtered by manager email or status)
         app.get('/club/manager', verifyFBToken, async (req, res) => {
@@ -249,6 +276,72 @@ async function run() {
             } catch (err) {
                 console.error(err);
                 res.status(500).send({ message: 'Failed to update status', error: err.message });
+            }
+        });
+
+        //  Events API----
+        app.post('/events', verifyFBToken, async (req, res) => {
+            try {
+                const event = req.body;
+                event.createdAt = new Date();
+
+                const result = await eventCollection.insertOne(event);
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to create club', error: err.message });
+            }
+        });
+
+        // GET all events (optionally filtered by manager email)
+        app.get('/events/manager', verifyFBToken, async (req, res) => {
+            try {
+                const { managerEmail, status } = req.query;
+                const query = {};
+
+                if (managerEmail) query.managerEmail = managerEmail;
+                if (status) query.status = status;
+
+                const events = await eventCollection.find(query).sort({ createdAt: -1 }).toArray();
+                res.send(events);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to fetch clubs', error: err.message });
+            }
+        });
+
+        // UPDATE event
+        app.patch('/events/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const updateData = req.body;
+
+                const event = await eventCollection.findOne({ _id: new ObjectId(id) });
+
+                const result = await eventCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateData }
+                );
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to update Event', error: err.message });
+            }
+        });
+
+        // DELETE club (manager can delete own club)
+        app.delete('/events/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                // check if manager owns this club
+                const event = await eventCollection.findOne({ _id: new ObjectId(id) });
+
+                const result = await eventCollection.deleteOne({ _id: new ObjectId(id) });
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to delete club', error: err.message });
             }
         });
 
