@@ -59,6 +59,7 @@ async function run() {
 
         const db = client.db('circlesphere_db');
         const userCollection = db.collection('users');
+        const clubCollection = db.collection('clubs')
 
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded_email;
@@ -84,6 +85,7 @@ async function run() {
             next();
         }
 
+        // User API 
         app.get('/users', verifyFBToken, async (req, res) => {
             const searchText = req.query.searchText;
             const query = {};
@@ -98,10 +100,17 @@ async function run() {
 
             }
 
-            const cursor = userCollection.find(query).sort({ createdAt: -1 }).limit(5);
+            const cursor = userCollection.find(query).sort({ createdAt: -1 });
             const result = await cursor.toArray();
             res.send(result);
         });
+
+        app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email;
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ role: user?.role || 'user' })
+        })
 
 
         app.post('/users', async (req, res) => {
@@ -118,14 +127,9 @@ async function run() {
             const result = await userCollection.insertOne(user);
             res.send(result);
         })
-        app.get('/users/:email/role', async (req, res) => {
-            const email = req.params.email;
-            const query = { email }
-            const user = await userCollection.findOne(query);
-            res.send({ role: user?.role || 'user' })
-        })
 
-        app.patch('/users/:id/role', verifyAdmin, async (req, res) => {
+
+        app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const roleInfo = req.body;
             const query = { _id: new ObjectId(id) }
@@ -138,6 +142,23 @@ async function run() {
             res.send(result);
         })
 
+        // Clubs API
+
+        app.post('/clubs', verifyFBToken, async (req, res) => {
+            try {
+                const club = req.body;
+                club.status = 'pending';
+                club.createdAt = new Date();
+                club.updatedAt = new Date();
+                club.managerEmail = req.decoded_email; // manager email token থেকে
+
+                const result = await clubCollection.insertOne(club);
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to create club', error: err.message });
+            }
+        });
 
 
         // Send a ping to confirm a successful connection
