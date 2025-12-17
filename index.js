@@ -160,6 +160,98 @@ async function run() {
             }
         });
 
+        // GET all clubs (optionally filtered by manager email or status)
+        app.get('/club/manager', verifyFBToken, async (req, res) => {
+            try {
+                const { managerEmail, status } = req.query;
+                const query = {};
+
+                if (managerEmail) query.managerEmail = managerEmail;
+                if (status) query.status = status;
+
+                const clubs = await clubCollection.find(query).sort({ createdAt: -1 }).toArray();
+                res.send(clubs);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to fetch clubs', error: err.message });
+            }
+        });
+
+        // GET single club by ID
+        app.get('/clubs/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const club = await clubCollection.findOne({ _id: new ObjectId(id) });
+                if (!club) return res.status(404).send({ message: 'Club not found' });
+                res.send(club);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to fetch club', error: err.message });
+            }
+        });
+
+        // UPDATE club (manager can edit own club)
+        app.patch('/clubs/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const updateData = req.body;
+
+                // check if manager owns this club
+                const club = await clubCollection.findOne({ _id: new ObjectId(id) });
+                if (!club) return res.status(404).send({ message: 'Club not found' });
+                if (club.managerEmail !== req.decoded_email)
+                    return res.status(403).send({ message: 'You are not allowed to edit this club' });
+
+                updateData.updatedAt = new Date();
+
+                const result = await clubCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateData }
+                );
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to update club', error: err.message });
+            }
+        });
+
+        // DELETE club (manager can delete own club)
+        app.delete('/clubs/:id', verifyFBToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                // check if manager owns this club
+                const club = await clubCollection.findOne({ _id: new ObjectId(id) });
+                if (!club) return res.status(404).send({ message: 'Club not found' });
+                if (club.managerEmail !== req.decoded_email)
+                    return res.status(403).send({ message: 'You are not allowed to delete this club' });
+
+                const result = await clubCollection.deleteOne({ _id: new ObjectId(id) });
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to delete club', error: err.message });
+            }
+        });
+
+        // ADMIN: Approve/Reject clubs
+        app.patch('/clubs/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const { status } = req.body; // approved / rejected / pending
+
+                const result = await clubCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { status, updatedAt: new Date() } }
+                );
+
+                res.send(result);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to update status', error: err.message });
+            }
+        });
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
