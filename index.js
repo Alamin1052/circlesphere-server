@@ -3,6 +3,7 @@ const cors = require('cors');
 const app = express();
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId, } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000
 
 // middleware
@@ -61,6 +62,8 @@ async function run() {
         const userCollection = db.collection('users');
         const clubCollection = db.collection('clubs')
         const eventCollection = db.collection('events')
+        const paymentsCollection = db.collection('payments');
+        const membershipsCollection = db.collection('memberships');
 
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded_email;
@@ -349,6 +352,108 @@ async function run() {
                 res.status(500).send({ message: 'Failed to delete club', error: err.message });
             }
         });
+
+        // payment related apis
+        app.post('/payment-checkout-session', async (req, res) => {
+            const clubInfo = req.body;
+            const amount = parseInt(clubInfo.Fee) * 100;
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'usd',
+                            unit_amount: amount,
+                            product_data: {
+                                name: `Please pay for: ${clubInfo.clubName}`
+                            }
+                        },
+                        quantity: 1,
+                    },
+                ],
+                mode: 'payment',
+                metadata: {
+                    clubId: clubInfo.clubId,
+                },
+                customer_email: clubInfo.memberEmail,
+                success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
+            })
+
+            res.send({ url: session.url })
+        })
+
+        // Membership and payment collection api
+        app.get('/verify-payment/:session_id', async (req, res) => {
+            try {
+                const sessionId = req.params.session_id;
+
+                // 1️⃣ Retrieve Stripe session
+                const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+                if (session.payment_status !== 'paid') {
+                    return res.status(400).send({ message: 'Payment not completed yet' });
+                }
+
+                const paymentIntentId = session.payment_intent;
+
+                // 2️⃣ Check if payment already processed
+                const existingPayment = await paymentsCollection.findOne({
+                    stripePaymentIntentId: paymentIntentId
+                });
+
+                if (existingPayment) {
+                    return res.send({
+                        message: 'Payment already verified',
+                        payment: existingPayment
+                    });
+                }
+
+                // 3️⃣ Create payment record
+                const paymentData = {
+                    userEmail: session.customer_email,
+                    amount: session.amount_total / 100,
+                    type: 'membership',
+                    clubId: session.metadata.clubId,
+                    stripePaymentIntentId: paymentIntentId,
+                    status: 'completed',
+                    createdAt: new Date()
+                };
+
+                const paymentResult = await paymentsCollection.insertOne(paymentData);
+
+                // 4️⃣ Check existing membership
+                const existingMembership = await membershipsCollection.findOne({
+                    userEmail: session.customer_email,
+                    clubId: session.metadata.clubId
+                });
+
+                if (!existingMembership) {
+                    const membership = {
+                        userEmail: session.customer_email,
+                        clubId: session.metadata.clubId,
+                        status: 'active',
+                        paymentId: paymentIntentId,
+                        joinedAt: new Date()
+                    };
+
+                    await membershipsCollection.insertOne(membership);
+                }
+
+                res.send({
+                    message: 'Payment verified & membership created',
+                    paymentId: paymentResult.insertedId
+                });
+
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({
+                    message: 'Error verifying payment',
+                    error: err.message
+                });
+            }
+        });
+
+
 
 
         // Send a ping to confirm a successful connection
