@@ -163,27 +163,21 @@ async function run() {
 
         // GET /clubs?search=abc
         app.get('/clubs', async (req, res) => {
-            try {
-                const { search } = req.query;
+            const search = req.query.search;
+            const query = {};
 
-                let query = { status: 'pending' };
+            if (search) {
+                // query.displayName = {$regex: searchText, $options: 'i'}
 
-                if (search) {
-                    query = {
-                        ...query,
-                        $or: [
-                            { clubName: { $regex: search, $options: 'i' } },
-                            { description: { $regex: search, $options: 'i' } },
-                        ]
-                    };
-                }
+                query.$or = [
+                    { clubName: { $regex: search, $options: 'i' } },
+                ]
 
-                const clubs = await clubCollection.find(query).toArray();
-                res.send(clubs);
-            } catch (err) {
-                console.error(err);
-                res.status(500).send({ message: 'Failed to fetch clubs', error: err.message });
             }
+
+            const cursor = clubCollection.find(query).sort({ createdAt: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
         });
 
 
@@ -205,7 +199,7 @@ async function run() {
         });
 
         // GET single club by ID
-        app.get('/clubs/:id', verifyFBToken, async (req, res) => {
+        app.get('/clubs/:id', async (req, res) => {
             try {
                 const id = req.params.id;
                 const club = await clubCollection.findOne({ _id: new ObjectId(id) });
@@ -290,6 +284,17 @@ async function run() {
             } catch (err) {
                 console.error(err);
                 res.status(500).send({ message: 'Failed to create club', error: err.message });
+            }
+        });
+
+        // Get all events 
+        app.get('/events', async (req, res) => {
+            try {
+                const events = await eventCollection.find().sort({ createdAt: -1 }).toArray();
+                res.send(events);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Failed to fetch events', error: err.message });
             }
         });
 
