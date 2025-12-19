@@ -96,8 +96,6 @@ async function run() {
             const query = {};
 
             if (searchText) {
-                // query.displayName = {$regex: searchText, $options: 'i'}
-
                 query.$or = [
                     { displayName: { $regex: searchText, $options: 'i' } },
                     { email: { $regex: searchText, $options: 'i' } },
@@ -167,29 +165,51 @@ async function run() {
 
         // GET /clubs?search=abc
         app.get('/clubs', async (req, res) => {
-            const search = req.query.search;
-            const query = {};
+            try {
+                const { search, sort } = req.query;
 
-            if (search) {
-                // query.displayName = {$regex: searchText, $options: 'i'}
+                const query = {};
 
-                query.$or = [
-                    { clubName: { $regex: search, $options: 'i' } },
-                ]
+                if (search) {
+                    query.$or = [
+                        { clubName: { $regex: search, $options: 'i' } }
+                    ];
+                }
 
+
+                let sortOption = { createdAt: -1 };
+
+                if (sort === 'oldest') {
+                    sortOption = { createdAt: 1 };
+                }
+                else if (sort === 'highestFee') {
+                    sortOption = { membershipFee: -1 };
+                }
+                else if (sort === 'lowestFee') {
+                    sortOption = { membershipFee: 1 };
+                }
+
+                const result = await clubCollection
+                    .find(query)
+                    .sort(sortOption)
+                    .toArray();
+
+                res.send(result);
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: 'Failed to fetch clubs' });
             }
-
-            const cursor = clubCollection.find(query).sort({ createdAt: -1 });
-            const result = await cursor.toArray();
-            res.send(result);
         });
+
 
 
         // GET all clubs (optionally filtered by manager email or status)
         app.get('/club/manager', verifyFBToken, async (req, res) => {
             try {
                 const { managerEmail, status } = req.query;
-                const query = {};
+                const query = { status: 'approved' };
+
 
                 if (managerEmail) query.managerEmail = managerEmail;
                 if (status) query.status = status;
@@ -214,6 +234,22 @@ async function run() {
                 res.status(500).send({ message: 'Failed to fetch club', error: err.message });
             }
         });
+
+        // Featured clubs
+        app.get('/featured-clubs', async (req, res) => {
+            try {
+                const clubs = await clubCollection
+                    .find({ status: 'approved' })
+                    .limit(6)
+                    .toArray();
+
+                res.send(clubs);
+            } catch (err) {
+                res.status(500).send({ message: 'Failed to load clubs' });
+            }
+        });
+
+
 
 
         // Member dashboard club
@@ -262,7 +298,6 @@ async function run() {
                 const id = req.params.id;
                 const updateData = req.body;
 
-                // check if manager owns this club
                 const club = await clubCollection.findOne({ _id: new ObjectId(id) });
                 if (!club) return res.status(404).send({ message: 'Club not found' });
                 if (club.managerEmail !== req.decoded_email)
@@ -286,7 +321,6 @@ async function run() {
             try {
                 const id = req.params.id;
 
-                // check if manager owns this club
                 const club = await clubCollection.findOne({ _id: new ObjectId(id) });
                 if (!club) return res.status(404).send({ message: 'Club not found' });
                 if (club.managerEmail !== req.decoded_email)
@@ -304,7 +338,7 @@ async function run() {
         app.patch('/clubs/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
             try {
                 const id = req.params.id;
-                const { status } = req.body; // approved / rejected / pending
+                const { status } = req.body;
 
                 const result = await clubCollection.updateOne(
                     { _id: new ObjectId(id) },
@@ -338,8 +372,6 @@ async function run() {
             const query = {};
 
             if (search) {
-                // query.displayName = {$regex: searchText, $options: 'i'}
-
                 query.$or = [
                     { title: { $regex: search, $options: 'i' } },
                 ]
@@ -503,7 +535,6 @@ async function run() {
             try {
                 const id = req.params.id;
 
-                // check if manager owns this club
                 const event = await eventCollection.findOne({ _id: new ObjectId(id) });
 
                 const result = await eventCollection.deleteOne({ _id: new ObjectId(id) });
@@ -823,10 +854,6 @@ async function run() {
                 res.status(500).send({ error: err.message });
             }
         });
-
-
-
-
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
