@@ -628,6 +628,26 @@ async function run() {
             }
         });
 
+        // Admin payment split (Pie chart)
+        app.get('/admin/payment-breakdown', verifyFBToken, verifyAdmin, async (req, res) => {
+
+            const data = await paymentsCollection.aggregate([
+                {
+                    $group: {
+                        _id: '$type',
+                        total: { $sum: '$amount' }
+                    }
+                }
+            ]).toArray();
+
+            const formatted = data.map(item => ({
+                name: item._id,
+                value: item.total
+            }));
+
+            res.send(formatted);
+        });
+
 
 
         // club payment 
